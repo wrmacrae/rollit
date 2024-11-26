@@ -44,6 +44,48 @@ function incrementChapterOfTitle(title: String) {
    
 }
 
+function rollD20(): number {
+  return Math.floor(Math.random() * 20) + 1;
+}
+
+type StoryOutcome = {
+  range: [number, number];
+  outcome: string;
+};
+
+function determineOutcome(roll: number, outcomes: StoryOutcome[]): string {
+  for (const { range, outcome } of outcomes) {
+      if (roll >= range[0] && roll <= range[1]) {
+          return outcome;
+      }
+  }
+  return "You won't believe what happened next!";
+}
+
+
+function processTextForRolls(text: string) {
+  const initialTextRegex = /^(.*?)(?=\d+(?:-\d+)?:)/s;
+  const match = initialTextRegex.exec(text);
+
+  const initialText = match ? match[1].trim() : "";
+  const outcomes: StoryOutcome[] = [];
+  const outcomeRegex = /(\d+)(?:-(\d+))?:\s*([^:]+?)(?=\s*\d+(?:-\d+)?:|$)/g;
+
+  let outcomeMatch;
+  while ((outcomeMatch = outcomeRegex.exec(text)) !== null) {
+      const start = parseInt(outcomeMatch[1], 10);
+      const end = outcomeMatch[2] ? parseInt(outcomeMatch[2], 10) : start;
+      const outcome = outcomeMatch[3].trim();
+      outcomes.push({ range: [start, end], outcome });
+  }
+  if (outcomes.length > 0) {
+    const roll = rollD20();
+    const outcome = determineOutcome(roll, outcomes);  
+    return `${initialText} ${outcome}`
+  }
+  return text
+}
+
 Devvit.addTrigger({
   event: 'CommentSubmit',
   async onEvent(event, context) {
@@ -54,9 +96,9 @@ Devvit.addTrigger({
       return
     }
 
-    const comment = randomCommentByScoreWeight(comments)
+    const newChapter = processTextForRolls(randomCommentByScoreWeight(comments)?.body!)
     const title = incrementChapterOfTitle(post.title)
-    const body = `${post.body}\n\n${comment?.body}`;
+    const body = `${post.body}\n\n${newChapter}`;
     const subreddit = (await context.reddit.getCurrentSubreddit()).name;
 
     await post.lock()
