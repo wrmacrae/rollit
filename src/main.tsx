@@ -112,6 +112,7 @@ Devvit.addTrigger({
     })
   }
 })
+
 // Defines the messages that are exchanged between Devvit and Web View
 type WebViewMessage =
   | {
