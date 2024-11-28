@@ -1,4 +1,4 @@
-import { Comment, Context, Devvit, Listing, Post, RichTextBuilder } from '@devvit/public-api';
+import { Comment, Context, Devvit, Listing, Post, RichTextBuilder, useState } from '@devvit/public-api';
 
 Devvit.configure({
   redditAPI: true,
@@ -109,5 +109,45 @@ Devvit.addTrigger({
     })
   }
 })
+
+
+// Add a menu item to the subreddit menu for instantiating the new experience post
+Devvit.addMenuItem({
+  label: 'Add my post',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_event, context) => {
+    const { reddit, ui } = context;
+    const subreddit = await reddit.getCurrentSubreddit();
+    await reddit.submitPost({
+      title: 'My devvit post',
+      subredditName: subreddit.name,
+      // The preview appears while the post loads
+      preview: (
+        <vstack height="100%" width="100%" alignment="middle center">
+          <text size="large">Loading ...</text>
+        </vstack>
+      ),
+    });
+    ui.showToast({ text: 'Created post!' });
+  },
+});
+
+// Add a post type definition
+Devvit.addCustomPostType({
+  name: 'Experience Post',
+  height: 'regular',
+  render: (_context) => {
+    const [counter, setCounter] = useState(0);
+
+    return (
+      <vstack height="100%" width="100%" gap="medium">
+        <text size="large">{`Chapter 1: You're the lone guard of a caravan`}</text>
+        <text>You're the lone guard of a caravan, and along the road to Phandelver you spot a broken down wagon.</text>
+      </vstack>
+    );
+  },
+});
+
 
 export default Devvit;
