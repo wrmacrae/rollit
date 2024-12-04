@@ -1,4 +1,4 @@
-import { Comment, Context, Devvit, Listing, Post, RichTextBuilder } from '@devvit/public-api';
+import { Comment, Context, Devvit, Listing, Post, RichTextBuilder, useState, useForm } from '@devvit/public-api';
 
 Devvit.configure({
   redditAPI: true,
@@ -109,5 +109,88 @@ Devvit.addTrigger({
     })
   }
 })
+
+
+// Add a menu item to the subreddit menu for instantiating the new experience post
+Devvit.addMenuItem({
+  label: 'Start a Story',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_event, context) => {
+    const { reddit, ui } = context;
+    const subreddit = await reddit.getCurrentSubreddit();
+    await reddit.submitPost({
+      title: `Chapter 1: You're the lone guard of a caravan`,
+      textFallback: { text: `You're the lone guard of a caravan on the road to Phandelver.`},
+      subredditName: subreddit.name,
+      // The preview appears while the post loads
+      preview: (
+        <vstack height="100%" width="100%" alignment="middle center">
+          <text size="large">Loading ...</text>
+        </vstack>
+      ),
+    });
+    ui.showToast({ text: 'Created post!' });
+  },
+});
+
+const CommentApp: Devvit.CustomPostComponent = (context) => {
+  const { reddit } = context;
+  const postId = context.postId!
+  // const [body, setBody] = useState<string>(`You're the lone guard of a caravan, and along the road to Phandelver you spot a broken down wagon.`);
+  const [body, setBody] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.body!)));
+  const cleanedBody = body.replace(/#\s*(DX_Bundle|DX_Config|DX_Cached):\s*\S+\s*/g, '').trim();
+  // async () => {reddit.getPostById(postId)).body})
+  // const body = (await reddit.getPostById(postId)).body
+
+  const commentForm = useForm({
+    fields: [
+      {
+        type: 'string',
+        name: 'fixedContent',
+        label: 'What Happens Next?',
+        required: true,
+      },
+      {
+        type: 'string',
+        name: 'firstOutcome',
+        label: '1-9: (Something that goes bad)',
+        required: true,
+      },
+      {
+        type: 'string',
+        name: 'secondOutcome',
+        label: '10-18: (Something that goes well)',
+        required: true,
+      },
+      {
+        type: 'string',
+        name: 'thirdOutcome',
+        label: '10-18: (Something that goes extremely well)',
+        required: true,
+      },
+    ]
+  }, async (values) => {
+    if (!values.fixedContent) return;
+    reddit.submitComment({text: `${values.fixedContent} 1-9: ${values.firstOutcome} 10-18: ${values.secondOutcome} 19-20: ${values.thirdOutcome}`, id: context.postId ? context.postId! : "F"})
+  });
+
+  return (
+    <vstack height="100%" width="100%" gap="medium">
+      <text>{cleanedBody}</text>
+      <button onPress={() =>
+        context.ui.showForm(commentForm)}
+      >
+        Continue the Story!
+      </button>
+    </vstack>
+  );
+};
+
+Devvit.addCustomPostType({
+  name: 'Comment Form',
+  render: CommentApp,
+  height: 'tall'
+});
 
 export default Devvit;
