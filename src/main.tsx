@@ -116,30 +116,57 @@ Devvit.addMenuItem({
   label: 'Start a Story',
   location: 'subreddit',
   forUserType: 'moderator',
-  onPress: async (_event, context) => {
-    const { reddit, ui } = context;
-    const subreddit = await reddit.getCurrentSubreddit();
-    await reddit.submitPost({
-      title: `Chapter 1: You're the lone guard of a caravan`,
-      textFallback: { text: `You're the lone guard of a caravan on the road to Phandelver.`},
-      subredditName: subreddit.name,
-      // The preview appears while the post loads
+
+  onPress: async (_, context) => {
+    const { reddit, ui, userId } = context;
+    // const currentSubreddit = await reddit.getCurrentSubreddit();
+    // const subName = currentSubreddit.name;
+    const user = await reddit.getUserById(userId!);
+
+    if (user) ui.showForm(postForm);
+  },
+});
+
+const postForm = Devvit.createForm(
+  (data) => {
+    return {
+      fields: [
+        {
+          type: 'string',
+          name: 'start',
+          label: 'How does it start?',
+          required: true,
+        },
+       ],
+       title: 'Start a Story',
+       acceptLabel: 'Post',
+    } as const; 
+  }, async ({ values }, context) => {
+    const { reddit } = context
+    const { title, start } = values
+    if (!values.title || !values.start) return;
+    const post = await reddit.submitPost({
+      title: `Chapter 1: ${start}`,
+      text: start,
+      subredditName: "squerp",
       preview: (
-        <vstack height="100%" width="100%" alignment="middle center">
-          <text size="large">Loading ...</text>
+        <vstack>
+          <text color="black white">Loading...</text>
         </vstack>
       ),
     });
-    ui.showToast({ text: 'Created post!' });
-  },
-});
+  }
+);
+
 
 const CommentApp: Devvit.CustomPostComponent = (context) => {
   const { reddit } = context;
   const postId = context.postId!
   // const [body, setBody] = useState<string>(`You're the lone guard of a caravan, and along the road to Phandelver you spot a broken down wagon.`);
   const [body, setBody] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.body!)));
-  const cleanedBody = body.replace(/#\s*(DX_Bundle|DX_Config|DX_Cached):\s*\S+\s*/g, '').trim();
+  const [title, setTitle] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.title!)));
+  var cleanedBody = body.replace(/#\s*(DX_Bundle|DX_Config|DX_Cached):\s*\S+\s*/g, '').trim();
+  if (cleanedBody == "") { cleanedBody = title }
   // async () => {reddit.getPostById(postId)).body})
   // const body = (await reddit.getPostById(postId)).body
 
@@ -166,7 +193,7 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
       {
         type: 'string',
         name: 'thirdOutcome',
-        label: '10-18: (Something that goes extremely well)',
+        label: '18-20: (Something that goes extremely well)',
         required: true,
       },
     ]
@@ -176,8 +203,8 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
   });
 
   return (
-    <vstack height="100%" width="100%" gap="medium">
-      <text>{cleanedBody}</text>
+    <vstack height="100%" width="100%" gap="medium" padding="small">
+      <text wrap>{cleanedBody}</text>
       <button onPress={() =>
         context.ui.showForm(commentForm)}
       >
