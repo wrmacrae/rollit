@@ -2,7 +2,18 @@ import { Comment, Context, Devvit, Listing, Post, RichTextBuilder, useState, use
 
 Devvit.configure({
   redditAPI: true,
+  http: true,
 })
+
+Devvit.addSettings([
+  {
+    name: 'gemini-api-key',
+    label: 'Gemini API key',
+    type: 'string',
+    isSecret: true,
+    scope: 'app',
+  },
+]);
 
 function totalScoreOfComments(comments : Comment[]) {
   let totalScore = 0;
@@ -118,12 +129,8 @@ Devvit.addMenuItem({
   forUserType: 'moderator',
 
   onPress: async (_, context) => {
-    const { reddit, ui, userId } = context;
-    // const currentSubreddit = await reddit.getCurrentSubreddit();
-    // const subName = currentSubreddit.name;
-    const user = await reddit.getUserById(userId!);
-
-    if (user) ui.showForm(postForm);
+    const { ui } = context;
+    ui.showForm(postForm);
   },
 });
 
@@ -132,7 +139,7 @@ const postForm = Devvit.createForm(
     return {
       fields: [
         {
-          type: 'string',
+          type: 'paragraph',
           name: 'start',
           label: 'How does it start?',
           required: true,
@@ -143,12 +150,13 @@ const postForm = Devvit.createForm(
     } as const; 
   }, async ({ values }, context) => {
     const { reddit } = context
-    const { title, start } = values
-    if (!values.title || !values.start) return;
+    const { start } = values
+    if (!values.start) return;
+    const subredditName = (await reddit.getCurrentSubreddit()).name
     const post = await reddit.submitPost({
       title: `Chapter 1: ${start}`,
       text: start,
-      subredditName: "squerp",
+      subredditName: subredditName,
       preview: (
         <vstack>
           <text color="black white">Loading...</text>
@@ -162,38 +170,60 @@ const postForm = Devvit.createForm(
 const CommentApp: Devvit.CustomPostComponent = (context) => {
   const { reddit } = context;
   const postId = context.postId!
-  // const [body, setBody] = useState<string>(`You're the lone guard of a caravan, and along the road to Phandelver you spot a broken down wagon.`);
   const [body, setBody] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.body!)));
   const [title, setTitle] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.title!)));
+  const [apiKey, setApiKey] = useState<string>(async () => (await context.settings.get('gemini-api-key'))!)
   var cleanedBody = body.replace(/#\s*(DX_Bundle|DX_Config|DX_Cached):\s*\S+\s*/g, '').trim();
-  if (cleanedBody == "") { cleanedBody = title }
-  // async () => {reddit.getPostById(postId)).body})
-  // const body = (await reddit.getPostById(postId)).body
+  if (cleanedBody == "") { cleanedBody = title.replace("Chapter 1: ", "") }
+  const prompt = `Write short new sentence that could continue the below story. Then write three different short sentences that can happen after that if things go poorly, well, or extremely well. Separate each sentence with the character #. Respond only with the new writing, not the original story so far. ${cleanedBody}`
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  const data = {contents:[{parts:[{text:prompt }]}]};
+  async function generateContent() {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(data)
+      });
+      const result = await response.json();
+      const textField = result?.candidates[0].content?.parts?.[0]?.text;
+      return textField;
+    } catch (error) {
+    }
+  }
+  const [content, setContent] = useState<string>(async () => (await generateContent()));
+  const [fixedContent, firstOutcome, secondOutcome, thirdOutcome] = content.split("#").map((s) => s.trim());
 
   const commentForm = useForm({
     fields: [
       {
-        type: 'string',
+        type: 'paragraph',
         name: 'fixedContent',
         label: 'What Happens Next?',
+        defaultValue: fixedContent,
         required: true,
       },
       {
-        type: 'string',
+        type: 'paragraph',
         name: 'firstOutcome',
         label: '1-9: (Something that goes bad)',
+        defaultValue: firstOutcome,
         required: true,
       },
       {
-        type: 'string',
+        type: 'paragraph',
         name: 'secondOutcome',
         label: '10-18: (Something that goes well)',
+        defaultValue: secondOutcome,
         required: true,
       },
       {
-        type: 'string',
+        type: 'paragraph',
         name: 'thirdOutcome',
         label: '18-20: (Something that goes extremely well)',
+        defaultValue: thirdOutcome,
         required: true,
       },
     ]
@@ -206,7 +236,7 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
     <vstack height="100%" width="100%" gap="medium" padding="small">
       <text wrap>{cleanedBody}</text>
       <button onPress={() =>
-        context.ui.showForm(commentForm)}
+        context.ui.showForm(commentForm, {fixedContent: "A", firstOutcome: "B", secondOutcome: "C", thirdOutcome: "D"})}
       >
         Continue the Story!
       </button>
