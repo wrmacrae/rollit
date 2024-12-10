@@ -13,6 +13,12 @@ Devvit.addSettings([
     isSecret: true,
     scope: 'app',
   },
+  {
+    name: 'ai-mode',
+    label: 'Use Google Gemini to prefill content',
+    type: 'boolean',
+    scope: 'installation',
+  },
 ]);
 
 function totalScoreOfComments(comments : Comment[]) {
@@ -172,29 +178,38 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
   const postId = context.postId!
   const [body, setBody] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.body!)));
   const [title, setTitle] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.title!)));
-  const [apiKey, setApiKey] = useState<string>(async () => (await context.settings.get('gemini-api-key'))!)
   var cleanedBody = body.replace(/#\s*(DX_Bundle|DX_Config|DX_Cached):\s*\S+\s*/g, '').trim();
   if (cleanedBody == "") { cleanedBody = title.replace("Chapter 1: ", "") }
-  const prompt = `Write short new sentence that could continue the below story. Then write three different short sentences that can happen after that if things go poorly, well, or extremely well. Separate each sentence with the character #. Respond only with the new writing, not the original story so far. ${cleanedBody}`
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
-  const data = {contents:[{parts:[{text:prompt }]}]};
-  async function generateContent() {
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(data)
-      });
-      const result = await response.json();
-      const textField = result?.candidates[0].content?.parts?.[0]?.text;
-      return textField;
-    } catch (error) {
+  const [aiMode, setAiMode] = useState<boolean>(async () => (await context.settings.get('ai-mode'))!)
+  var fixedContent, firstOutcome, secondOutcome, thirdOutcome;
+  if (aiMode) {
+    const [apiKey, setApiKey] = useState<string>(async () => (await context.settings.get('gemini-api-key'))!)
+    const prompt = `Write short new sentence that could continue the below story. Then write three different short sentences that can happen after that if things go poorly, well, or extremely well. Separate each sentence with the character #. Respond only with the new writing, not the original story so far. ${cleanedBody}`
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+    const data = {contents:[{parts:[{text:prompt }]}]};
+    async function generateContent() {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        const textField = result?.candidates[0].content?.parts?.[0]?.text;
+        return textField;
+      } catch (error) {
+      }
     }
+    const [content, setContent] = useState<string>(async () => (await generateContent()));
+    [fixedContent, firstOutcome, secondOutcome, thirdOutcome] = content.split("#").map((s) => s.trim());
+  } else {
+    fixedContent = "";
+    firstOutcome = "";
+    secondOutcome = "";
+    thirdOutcome = "";
   }
-  const [content, setContent] = useState<string>(async () => (await generateContent()));
-  const [fixedContent, firstOutcome, secondOutcome, thirdOutcome] = content.split("#").map((s) => s.trim());
 
   const commentForm = useForm({
     fields: [
@@ -231,17 +246,58 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
     if (!values.fixedContent) return;
     reddit.submitComment({text: `${values.fixedContent} 1-9: ${values.firstOutcome} 10-18: ${values.secondOutcome} 19-20: ${values.thirdOutcome}`, id: context.postId ? context.postId! : "F"})
   });
-
-  return (
-    <vstack height="100%" width="100%" gap="medium" padding="small">
-      <text wrap>{cleanedBody}</text>
-      <button onPress={() =>
-        context.ui.showForm(commentForm, {fixedContent: "A", firstOutcome: "B", secondOutcome: "C", thirdOutcome: "D"})}
-      >
-        Continue the Story!
-      </button>
-    </vstack>
-  );
+  const postForm = useForm({
+      fields: [
+        {
+          type: 'paragraph',
+          name: 'start',
+          label: 'How does it start?',
+          required: true,
+        },
+      ],
+      title: 'Start a Story',
+      acceptLabel: 'Post',
+    }, async (values) => {
+      const { reddit } = context
+      const { start } = values
+      if (!values.start) return;
+      const subredditName = (await reddit.getCurrentSubreddit()).name
+      const post = await reddit.submitPost({
+        title: `Chapter 1: ${start}`,
+        text: start,
+        subredditName: subredditName,
+        preview: (
+          <vstack>
+            <text color="black white">Loading...</text>
+          </vstack>
+        ),
+      });
+    }
+  );  
+  if (getChapterOfTitle(title) < 6) {
+    return (
+      <vstack height="100%" width="100%" gap="medium" padding="small">
+        <text wrap>{cleanedBody}</text>
+        <button onPress={() =>
+          context.ui.showForm(commentForm, {fixedContent: "A", firstOutcome: "B", secondOutcome: "C", thirdOutcome: "D"})}
+        >
+          Continue the Story!
+        </button>
+      </vstack>
+    );
+  }
+  else {
+    return (
+      <vstack height="100%" width="100%" gap="medium" padding="small">
+        <text wrap>{cleanedBody}</text>
+        <button onPress={() =>
+          context.ui.showForm(postForm)}
+        >
+          Start a New Story!
+        </button>
+      </vstack>
+    );    
+  }
 };
 
 Devvit.addCustomPostType({
