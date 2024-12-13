@@ -184,7 +184,7 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
   var fixedContent, firstOutcome, secondOutcome, thirdOutcome;
   if (aiMode) {
     const [apiKey, setApiKey] = useState<string>(async () => (await context.settings.get('gemini-api-key'))!)
-    const prompt = `Write short new sentence that could continue the below story. Then write three different short sentences that can happen after that if things go poorly, well, or extremely well. Separate each sentence with the character #. Respond only with the new writing, not the original story so far. ${cleanedBody}`
+    const prompt = `Write short new sentence that could continue the below story. Then write three different short sentences that can happen after that if things go poorly, well, or extremely well. These sentences should continue from your first new sentence, but diverge from each other. Separate each sentence with the character #. Respond only with the new writing, not the original story so far. ${cleanedBody}`
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
     const data = {contents:[{parts:[{text:prompt }]}]};
     async function generateContent() {
@@ -237,7 +237,7 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
       {
         type: 'paragraph',
         name: 'thirdOutcome',
-        label: '18-20: (Something that goes extremely well)',
+        label: '19-20: (Something that goes extremely well)',
         defaultValue: thirdOutcome,
         required: true,
       },
