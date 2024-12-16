@@ -1,4 +1,4 @@
-import { Comment, Context, Devvit, Listing, Post, RichTextBuilder, useState, useForm } from '@devvit/public-api';
+import { Comment, Context, Devvit, Listing, Post, RichTextBuilder, useState, useForm, RedditAPIClient } from '@devvit/public-api';
 
 Devvit.configure({
   redditAPI: true,
@@ -79,6 +79,23 @@ function determineOutcome(roll: number, outcomes: StoryOutcome[]): string {
   return "You won't believe what happened next!";
 }
 
+async function getLatestChapterUrl(postId: string, reddit: RedditAPIClient) {
+  var url = ""
+  try {
+    var post = await reddit.getPostById(postId)
+    while (post.isLocked()) {
+      const comments = await post.comments.all()
+      for (const comment of comments) {
+        if (comment.body.startsWith("The story continues here ")) {
+          url = comment.body.slice("The story continues here ".length)
+          post = await reddit.getPostById("t3_" + url.split("/")[4])
+          break
+        }
+      }
+    }
+  } catch { }
+  return "https://www.reddit.com" + url
+}
 
 function processTextForRolls(text: string) {
   const initialTextRegex = /^(.*?)(?=\d+(?:-\d+)?:)/s;
@@ -109,7 +126,7 @@ Devvit.addTrigger({
     const post = (await context.reddit.getPostById(event.comment?.postId!))
     const chapter = getChapterOfTitle(post.title)
     const comments = await post.comments.all()
-    if (totalScoreOfComments(comments) < chapter) {
+    if (totalScoreOfComments(comments) < chapter || post.isLocked()) {
       return
     }
 
@@ -119,14 +136,16 @@ Devvit.addTrigger({
     const subreddit = (await context.reddit.getCurrentSubreddit()).name;
 
     await post.lock()
-    await context.reddit.submitPost({
+    const newPost = await context.reddit.submitPost({
       subredditName: subreddit,
       title: title,
       text: body,
     })
+    setTimeout(function() {
+      post.addComment({text: `The story continues here ${newPost.permalink}`});
+    }, 5000);
   }
 })
-
 
 // Add a menu item to the subreddit menu for instantiating the new experience post
 Devvit.addMenuItem({
@@ -178,6 +197,8 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
   const postId = context.postId!
   const [body, setBody] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.body!)));
   const [title, setTitle] = useState<string>(async () => (await reddit.getPostById(postId).then((post) => post.title!)));
+  const [isLocked, setLocked] = useState<boolean>(async () => (await reddit.getPostById(postId).then((post) => post.isLocked()!)))
+  const [latestChapterUrl, setLatestChapterUrl] = useState<string>(async () => (await  getLatestChapterUrl(postId, reddit)))
   var cleanedBody = body.replace(/#\s*(DX_Bundle|DX_Config|DX_Cached):\s*\S+\s*/g, '').trim();
   if (cleanedBody == "") { cleanedBody = title.replace("Chapter 1: ", "") }
   const [aiMode, setAiMode] = useState<boolean>(async () => (await context.settings.get('ai-mode'))!)
@@ -273,7 +294,20 @@ const CommentApp: Devvit.CustomPostComponent = (context) => {
         ),
       });
     }
-  );  
+  );
+  if (isLocked) {
+    return (
+      <vstack height="100%" width="100%" gap="medium" padding="small">
+        <text wrap>{cleanedBody}</text>
+        <button onPress={() =>
+          context.ui.navigateTo(latestChapterUrl)}
+        >
+          Read the Latest Chapter
+        </button>
+      </vstack>
+    );
+
+  }
   if (getChapterOfTitle(title) < 6) {
     return (
       <vstack height="100%" width="100%" gap="medium" padding="small">
